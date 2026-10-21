@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MINI BOT // PAIRING</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;700&display=swap" rel="stylesheet">
+    <style>
+        :root { --matrix: #00ff41; --bg: #050505; --surface: rgba(10, 10, 10, 0.8); }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: var(--bg); color: var(--matrix);
+            font-family: 'JetBrains Mono', monospace;
+            min-height: 100vh; display: flex; align-items: center; justify-content: center;
+            overflow: hidden;
+        }
+
+        canvas { position: fixed; top: 0; left: 0; z-index: -1; opacity: 0.1; }
+
+        .container { width: 100%; max-width: 420px; padding: 20px; }
+
+        .card {
+            background: var(--surface);
+            backdrop-filter: blur(15px);
+            border: 1px solid var(--matrix);
+            padding: 40px;
+            border-radius: 30px;
+            box-shadow: 0 0 30px rgba(0, 255, 65, 0.1);
+        }
+
+        input {
+            width: 100%; background: #000; border: 1px solid var(--matrix);
+            color: var(--matrix); padding: 15px 20px; border-radius: 15px;
+            font-family: 'JetBrains Mono', monospace; font-size: 1rem;
+            outline: none; margin-top: 20px;
+        }
+        input::placeholder { color: rgba(0, 255, 65, 0.5); }
+
+        button {
+            width: 100%; background: var(--matrix); color: #000; border: none;
+            padding: 15px; margin-top: 20px; cursor: pointer; font-weight: bold;
+            border-radius: 15px; font-family: 'JetBrains Mono', monospace; transition: 0.3s;
+        }
+        button:hover { box-shadow: 0 0 20px var(--matrix); transform: translateY(-2px); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+
+        .output { margin-top: 25px; font-size: 0.85rem; text-align: center; min-height: 3em; word-break: break-word; }
+        .code { font-size: 1.6rem; font-weight: bold; letter-spacing: 3px; margin-top: 10px; }
+        .hint { font-size: 0.75rem; opacity: 0.7; margin-top: 10px; line-height: 1.5; }
+        .header { font-size: 0.6rem; text-align: center; margin-bottom: 20px; opacity: 0.7; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+<canvas id="matrix"></canvas>
+
+<div class="container">
+    <div class="header" id="sysStatus">SYSTEM_STATUS: [CHECKING] // CONNECTION: [---]</div>
+    <div class="card">
+        <h2 style="font-size: 1.2rem; text-align: center;">MINI_BOT_ACCESS</h2>
+
+        <input type="password" id="passInput" class="hidden" placeholder="> ENTER_PASSWORD">
+        <input type="tel" id="phoneInput" placeholder="> ENTER_PHONE (e.g. 919876543210)" maxlength="15">
+
+        <button id="pairBtn" onclick="getPairingCode()">PAIR REQUEST</button>
+        <div id="result" class="output"></div>
+    </div>
+</div>
+
+<script>
+    // Matrix rain background
+    const canvas = document.getElementById('matrix');
+    const ctx = canvas.getContext('2d');
+    canvas.height = window.innerHeight;
+    canvas.width = window.innerWidth;
+    const chars = "0101MINIBOT";
+    const fontSize = 16;
+    const columns = canvas.width / fontSize;
+    const drops = Array(Math.floor(columns)).fill(1);
+    function draw() {
+        ctx.fillStyle = "rgba(0, 0, 0, 0.05)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#00ff41";
+        ctx.font = fontSize + "px monospace";
+        drops.forEach((y, i) => {
+            const text = chars[Math.floor(Math.random() * chars.length)];
+            ctx.fillText(text, i * fontSize, y * fontSize);
+            if (y * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
+            drops[i]++;
+        });
+    }
+    setInterval(draw, 50);
+
+    const result = document.getElementById('result');
+    const btn = document.getElementById('pairBtn');
+    const sysStatus = document.getElementById('sysStatus');
+    let pollTimer = null;
+
+    function setResult(html) { result.innerHTML = html; }
+
+    // Show connection state and whether a password is needed
+    async function loadStatus() {
+        try {
+            const s = await (await fetch('/status')).json();
+            if (s.paired) {
+                sysStatus.textContent = `SYSTEM_STATUS: [SECURE] // CONNECTION: [${s.connected ? 'ACTIVE' : 'RECONNECTING'}]`;
+                setResult('> ALREADY_PAIRED. Delete the session folder on the server to pair again.');
+                btn.disabled = true;
+                return;
+            }
+            sysStatus.textContent = 'SYSTEM_STATUS: [READY] // CONNECTION: [WAITING]';
+            if (s.passwordRequired) document.getElementById('passInput').classList.remove('hidden');
+        } catch (e) {
+            sysStatus.textContent = 'SYSTEM_STATUS: [ERROR] // CONNECTION: [OFFLINE]';
+        }
+    }
+
+    // After a code is shown, wait until WhatsApp confirms the link
+    function waitForLink() {
+        clearInterval(pollTimer);
+        pollTimer = setInterval(async () => {
+            try {
+                const s = await (await fetch('/status')).json();
+                if (s.connected) {
+                    clearInterval(pollTimer);
+                    sysStatus.textContent = 'SYSTEM_STATUS: [SECURE] // CONNECTION: [ACTIVE]';
+                    setResult('> ACCESS_GRANTED. Bot is connected ✅');
+                }
+            } catch (e) { /* keep polling */ }
+        }, 3000);
+    }
+
+    async function getPairingCode() {
+        const num = document.getElementById('phoneInput').value.replace(/[^0-9]/g, '');
+        const pass = document.getElementById('passInput').value;
+
+        if (num.length < 7) return setResult('> ERROR: INVALID_INPUT');
+
+        btn.disabled = true;
+        setResult('> CONNECTING TO GATEWAY...');
+        try {
+            const res = await fetch(`/pair?number=${num}`, {
+                headers: { 'x-pair-password': pass }
+            });
+            const data = await res.json();
+
+            if (!res.ok || !data.code) {
+                setResult(`> ERROR: ${data.error || 'CONNECTION_FAILED'}`);
+                btn.disabled = false;
+                return;
+            }
+
+            setResult(`> PAIRING_CODE:<div class="code">${data.code}</div>
+                <div class="hint">WhatsApp > Linked Devices > Link with phone number<br>Enter this code. It expires in about a minute.</div>`);
+            waitForLink();
+        } catch (e) {
+            setResult('> FATAL: GATEWAY_OFFLINE');
+            btn.disabled = false;
+        }
+    }
+
+    loadStatus();
+</script>
+
+</body>
+</html>
