@@ -1,0 +1,19 @@
+{
+  "name": "mini-bot",
+  "version": "1.0.0",
+  "description": "Minimal WhatsApp bot with a simple plugin system",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "start:direct": "node bot.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "7.0.0-rc.14",
+    "dotenv": "^16.4.5",
+    "pino": "^9.0.0",
+    "express": "^4.18.2"
+  }
+}
